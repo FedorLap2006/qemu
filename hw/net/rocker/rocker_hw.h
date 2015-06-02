@@ -358,6 +358,11 @@ enum {
     ROCKER_TLV_OF_DPA_TTL_CHECK,           /* u8 */
     ROCKER_TLV_OF_DPA_COPY_CPU_ACTION,     /* u8 */
 
+    /* Outside of OF-DPA 1.0 and 2.0 specifications.
+     * Thus marked as EX (extension) */
+    ROCKER_TLV_OF_DPA_EX_FRAG_TYPE,        /* u8 one of
+                                            * enum rocker_of_dpa_ex_frag_type */
+
     __ROCKER_TLV_OF_DPA_MAX,
     ROCKER_TLV_OF_DPA_MAX = __ROCKER_TLV_OF_DPA_MAX - 1,
 };
@@ -479,6 +484,24 @@ enum rocker_of_dpa_overlay_type {
 #define ROCKER_GROUP_L3_UNICAST(index) \
     (ROCKER_GROUP_TYPE_SET(ROCKER_OF_DPA_GROUP_TYPE_L3_UCAST) |\
      ROCKER_GROUP_INDEX_LONG_SET(index))
+
+/*
+ * Fragment types
+ * An extension to OF-DPA taken from Open vSwitch
+ *
+ * @ROCKER_OF_DPA_EX_FRAG_TYPE_NONE: Packet is not a fragment.
+ * @ROCKER_OF_DPA_EX_FRAG_TYPE_FIRST: Packet is a fragment with offset 0.
+ * @ROCKER_OF_DPA_EX_FRAG_TYPE_LATER: Packet is a fragment with nonzero offset.
+ */
+
+enum rocker_of_dpa_ex_frag_type {
+        ROCKER_OF_DPA_EX_FRAG_TYPE_NONE,
+        ROCKER_OF_DPA_EX_FRAG_TYPE_FIRST,
+        ROCKER_OF_DPA_EX_FRAG_TYPE_LATER,
+
+        __ROCKER_OF_DPA_EX_FRAG_TYPE_MAX
+        ROCKER_OF_DPA_EX_FRAG_TYPE_MAX = __ROCKER_OF_DPA_EX_FRAG_TYPE_MAX - 1,
+};
 
 /*
  * Rocker general purpose registers

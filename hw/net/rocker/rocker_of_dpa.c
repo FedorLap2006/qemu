@@ -59,8 +59,8 @@ typedef struct of_dpa_flow_key {
     struct {
         uint8_t proto;               /* IP protocol or ARP opcode */
         uint8_t tos;                 /* IP ToS */
+        uint8_t frag;                /* one of ROCKER_TLV_OF_DPA_EX_FRAG_TYPE_* */
         uint8_t ttl;                 /* IP TTL/hop limit */
-        uint8_t frag;                /* one of FRAG_TYPE_* */
     } ip;
     union {
         struct {
@@ -720,6 +720,11 @@ of_dpa_multicast_routing_action_write(OfDpaFlowContext *fc,
     fc->action_set.write.vlan_id = flow->action.write.vlan_id;
 }
 
+static void of_dpa_acl_build_match_ip(uint8_t proto, uint8_t tos,
+                                      uint16_t frag_off, OfDpaFlowMatch *match)
+{
+}
+
 static void of_dpa_acl_build_match(OfDpaFlowContext *fc,
                                    OfDpaFlowMatch *match)
 {
@@ -735,7 +740,14 @@ static void of_dpa_acl_build_match(OfDpaFlowContext *fc,
     if (fc->fields.ipv4hdr) {
         match->value.ip.proto = fc->fields.ipv4hdr->ip_p;
         match->value.ip.tos = fc->fields.ipv4hdr->ip_tos;
-        match->value.width = FLOW_KEY_WIDTH(ip.tos);
+        if (fc->fields.ipv4hdr->ip_off & htons(IP_OFFSET)) {
+            match->value.ip.frag = ROCKER_OF_DPA_EX_FRAG_TYPE_LATER;
+        } else if (fc->fields.ipv4hdr->ip_off & htons(IP_MF)) {
+            match->value.ip.frag = ROCKER_OF_DPA_EX_FRAG_TYPE_FIRST;
+        } else {
+            match->value.ip.frag = ROCKER_OF_DPA_EX_FRAG_TYPE_NONE;
+        }
+        match->value.width = FLOW_KEY_WIDTH(ip.frag);
     } else if (fc->fields.ipv6hdr) {
         match->value.ip.proto =
             fc->fields.ipv6hdr->ip6_ctlun.ip6_un1.ip6_un1_nxt;
