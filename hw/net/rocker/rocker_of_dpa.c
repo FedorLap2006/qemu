@@ -131,7 +131,6 @@ typedef struct of_dpa_flow {
     OfDpaFlowKey mask;
     OfDpaFlowAction action;
     struct {
-        uint64_t hits;
         int64_t install_time;
         int64_t refresh_time;
         uint64_t rx_pkts;
@@ -1023,7 +1022,7 @@ static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, uint32_t tbl_id)
         return;
     }
 
-    flow->stats.hits++;
+    flow->stats.rx_pkts++;
 
     if (ops->action_apply) {
         ops->action_apply(fc, flow);
@@ -2337,7 +2336,7 @@ static void of_dpa_flow_fill(void *cookie, void *value, void *user_data)
     naction = nflow->action = g_malloc0(sizeof(*naction));
 
     nflow->cookie = flow->cookie;
-    nflow->hits = flow->stats.hits;
+    nflow->hits = flow->stats.rx_pkts;
     nkey->priority = flow->priority;
     nkey->tbl_id = key->tbl_id;
 
