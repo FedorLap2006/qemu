@@ -134,7 +134,9 @@ typedef struct of_dpa_flow {
         int64_t install_time;
         int64_t refresh_time;
         uint64_t rx_pkts;
+        uint64_t rx_bytes;
         uint64_t tx_pkts;
+        uint64_t tx_bytes;
     } stats;
 } OfDpaFlow;
 
@@ -509,7 +511,8 @@ static void of_dpa_flow_pkt_hdr_rewrite(OfDpaFlowContext *fc,
     }
 }
 
-static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, uint32_t tbl_id);
+static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, ssize_t bytes,
+                               uint32_t tbl_id);
 
 static void of_dpa_ig_port_build_match(OfDpaFlowContext *fc,
                                        OfDpaFlowMatch *match)
@@ -519,7 +522,7 @@ static void of_dpa_ig_port_build_match(OfDpaFlowContext *fc,
     match->value.width = FLOW_KEY_WIDTH(tbl_id);
 }
 
-static void of_dpa_ig_port_miss(OfDpaFlowContext *fc)
+static void of_dpa_ig_port_miss(OfDpaFlowContext *fc, ssize_t bytes)
 {
     uint32_t port;
 
@@ -529,7 +532,7 @@ static void of_dpa_ig_port_miss(OfDpaFlowContext *fc)
      */
 
     if (fp_port_from_pport(fc->in_pport, &port)) {
-        of_dpa_flow_ig_tbl(fc, ROCKER_OF_DPA_TABLE_ID_VLAN);
+        of_dpa_flow_ig_tbl(fc, bytes, ROCKER_OF_DPA_TABLE_ID_VLAN);
     }
 }
 
@@ -564,9 +567,9 @@ static void of_dpa_term_mac_build_match(OfDpaFlowContext *fc,
     match->value.width = FLOW_KEY_WIDTH(eth.type);
 }
 
-static void of_dpa_term_mac_miss(OfDpaFlowContext *fc)
+static void of_dpa_term_mac_miss(OfDpaFlowContext *fc, ssize_t bytes)
 {
-    of_dpa_flow_ig_tbl(fc, ROCKER_OF_DPA_TABLE_ID_BRIDGING);
+    of_dpa_flow_ig_tbl(fc, bytes, ROCKER_OF_DPA_TABLE_ID_BRIDGING);
 }
 
 static void of_dpa_apply_actions(OfDpaFlowContext *fc,
@@ -634,10 +637,10 @@ static void of_dpa_bridging_learn(OfDpaFlowContext *fc,
                                fc->in_pport, addr, vlan_id);
 }
 
-static void of_dpa_bridging_miss(OfDpaFlowContext *fc)
+static void of_dpa_bridging_miss(OfDpaFlowContext *fc, ssize_t bytes)
 {
     of_dpa_bridging_learn(fc, NULL);
-    of_dpa_flow_ig_tbl(fc, ROCKER_OF_DPA_TABLE_ID_ACL_POLICY);
+    of_dpa_flow_ig_tbl(fc, bytes, ROCKER_OF_DPA_TABLE_ID_ACL_POLICY);
 }
 
 static void of_dpa_bridging_action_write(OfDpaFlowContext *fc,
@@ -664,9 +667,9 @@ static void of_dpa_unicast_routing_build_match(OfDpaFlowContext *fc,
     match->value.width = FLOW_KEY_WIDTH(ipv6.addr.dst);
 }
 
-static void of_dpa_unicast_routing_miss(OfDpaFlowContext *fc)
+static void of_dpa_unicast_routing_miss(OfDpaFlowContext *fc, ssize_t bytes)
 {
-    of_dpa_flow_ig_tbl(fc, ROCKER_OF_DPA_TABLE_ID_ACL_POLICY);
+    of_dpa_flow_ig_tbl(fc, bytes, ROCKER_OF_DPA_TABLE_ID_ACL_POLICY);
 }
 
 static void of_dpa_unicast_routing_action_write(OfDpaFlowContext *fc,
@@ -699,9 +702,9 @@ of_dpa_multicast_routing_build_match(OfDpaFlowContext *fc,
     match->value.width = FLOW_KEY_WIDTH(ipv6.addr.dst);
 }
 
-static void of_dpa_multicast_routing_miss(OfDpaFlowContext *fc)
+static void of_dpa_multicast_routing_miss(OfDpaFlowContext *fc, ssize_t bytes)
 {
-    of_dpa_flow_ig_tbl(fc, ROCKER_OF_DPA_TABLE_ID_ACL_POLICY);
+    of_dpa_flow_ig_tbl(fc, bytes, ROCKER_OF_DPA_TABLE_ID_ACL_POLICY);
 }
 
 static void
@@ -738,11 +741,11 @@ static void of_dpa_acl_build_match(OfDpaFlowContext *fc,
     }
 }
 
-static void of_dpa_eg(OfDpaFlowContext *fc);
+static void of_dpa_eg(OfDpaFlowContext *fc, ssize_t bytes);
 static void of_dpa_acl_hit(OfDpaFlowContext *fc,
                            OfDpaFlow *dst_flow)
 {
-    of_dpa_eg(fc);
+    of_dpa_eg(fc, 0);
 }
 
 static void of_dpa_acl_action_write(OfDpaFlowContext *fc,
@@ -902,7 +905,7 @@ static void of_dpa_output_l3_unicast(OfDpaFlowContext *fc, OfDpaGroup *group)
     of_dpa_output_l2_interface(fc, l2_group);
 }
 
-static void of_dpa_eg(OfDpaFlowContext *fc)
+static void of_dpa_eg(OfDpaFlowContext *fc, ssize_t bytes)
 {
     OfDpaFlowAction *set = &fc->action_set;
     OfDpaGroup *group;
@@ -950,7 +953,7 @@ static void of_dpa_eg(OfDpaFlowContext *fc)
 typedef struct of_dpa_flow_tbl_ops {
     void (*build_match)(OfDpaFlowContext *fc, OfDpaFlowMatch *match);
     void (*hit)(OfDpaFlowContext *fc, OfDpaFlow *flow);
-    void (*miss)(OfDpaFlowContext *fc);
+    void (*miss)(OfDpaFlowContext *fc, ssize_t bytes);
     void (*hit_no_goto)(OfDpaFlowContext *fc);
     void (*action_apply)(OfDpaFlowContext *fc, OfDpaFlow *flow);
     void (*action_write)(OfDpaFlowContext *fc, OfDpaFlow *flow);
@@ -1002,7 +1005,8 @@ static OfDpaFlowTblOps of_dpa_tbl_ops[] = {
     },
 };
 
-static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, uint32_t tbl_id)
+static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, ssize_t bytes,
+                               uint32_t tbl_id)
 {
     OfDpaFlowTblOps *ops = &of_dpa_tbl_ops[tbl_id];
     OfDpaFlowMatch match = { { 0, }, };
@@ -1017,12 +1021,13 @@ static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, uint32_t tbl_id)
     flow = of_dpa_flow_match(fc->of_dpa, &match);
     if (!flow) {
         if (ops->miss) {
-            ops->miss(fc);
+            ops->miss(fc, bytes);
         }
         return;
     }
 
     flow->stats.rx_pkts++;
+    flow->stats.rx_bytes += bytes;
 
     if (ops->action_apply) {
         ops->action_apply(fc, flow);
@@ -1037,7 +1042,7 @@ static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, uint32_t tbl_id)
     }
 
     if (flow->action.goto_tbl) {
-        of_dpa_flow_ig_tbl(fc, flow->action.goto_tbl);
+        of_dpa_flow_ig_tbl(fc, bytes, flow->action.goto_tbl);
     } else if (ops->hit_no_goto) {
         ops->hit_no_goto(fc);
     }
@@ -1055,11 +1060,12 @@ static ssize_t of_dpa_ig(World *world, uint32_t pport,
         .iov = iov_copy,
         .iovcnt = iovcnt + 2,
     };
+    ssize_t bytes = iov_size(iov, iovcnt);
 
     of_dpa_flow_pkt_parse(&fc, iov, iovcnt);
-    of_dpa_flow_ig_tbl(&fc, ROCKER_OF_DPA_TABLE_ID_INGRESS_PORT);
+    of_dpa_flow_ig_tbl(&fc, bytes, ROCKER_OF_DPA_TABLE_ID_INGRESS_PORT);
 
-    return iov_size(iov, iovcnt);
+    return bytes;
 }
 
 #define ROCKER_TUNNEL_LPORT 0x00010000
@@ -1920,7 +1926,9 @@ static int of_dpa_cmd_flow_get_stats(OfDpa *of_dpa, uint64_t cookie,
     tlv_size = rocker_tlv_total_size(0) +                 /* nest */
                rocker_tlv_total_size(sizeof(uint32_t)) +  /* duration */
                rocker_tlv_total_size(sizeof(uint64_t)) +  /* rx_pkts */
-               rocker_tlv_total_size(sizeof(uint64_t));   /* tx_ptks */
+               rocker_tlv_total_size(sizeof(uint64_t)) +  /* rx_bytes */
+               rocker_tlv_total_size(sizeof(uint64_t)) +  /* tx_ptks */
+               rocker_tlv_total_size(sizeof(uint64_t));   /* tx_bytes */
 
     if (tlv_size > desc_buf_size(info)) {
         return -ROCKER_EMSGSIZE;
@@ -1932,8 +1940,12 @@ static int of_dpa_cmd_flow_get_stats(OfDpa *of_dpa, uint64_t cookie,
                         (int32_t)(now - flow->stats.install_time));
     rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_RX_PKTS,
                         flow->stats.rx_pkts);
+    rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_RX_BYTES,
+                        flow->stats.rx_bytes);
     rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_TX_PKTS,
                         flow->stats.tx_pkts);
+    rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_TX_BYTES,
+                        flow->stats.tx_bytes);
     rocker_tlv_nest_end(buf, &pos, nest);
 
     return desc_set_buf(info, tlv_size);
