@@ -133,6 +133,7 @@ typedef struct of_dpa_flow {
     struct {
         int64_t install_time;
         int64_t refresh_time;
+        int64_t last_used_time;
         uint64_t rx_pkts;
         uint64_t rx_bytes;
         uint64_t tx_pkts;
@@ -366,7 +367,8 @@ static void of_dpa_flow_del(OfDpa *of_dpa, OfDpaFlow *flow)
 static OfDpaFlow *of_dpa_flow_alloc(uint64_t cookie)
 {
     OfDpaFlow *flow;
-    int64_t now = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) / 1000;
+    int64_t now_ms = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
+    int64_t now = now_ms / 1000;
 
     flow = g_new0(OfDpaFlow, 1);
     if (!flow) {
@@ -376,6 +378,7 @@ static OfDpaFlow *of_dpa_flow_alloc(uint64_t cookie)
     flow->cookie = cookie;
     flow->mask.tbl_id = 0xffffffff;
 
+    flow->stats.last_used_time = now_ms;
     flow->stats.install_time = flow->stats.refresh_time = now;
 
     return flow;
@@ -1009,6 +1012,7 @@ static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, ssize_t bytes,
                                uint32_t tbl_id)
 {
     OfDpaFlowTblOps *ops = &of_dpa_tbl_ops[tbl_id];
+    int64_t now = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
     OfDpaFlowMatch match = { { 0, }, };
     OfDpaFlow *flow;
 
@@ -1026,6 +1030,7 @@ static void of_dpa_flow_ig_tbl(OfDpaFlowContext *fc, ssize_t bytes,
         return;
     }
 
+    flow->stats.last_used_time = now;
     flow->stats.rx_pkts++;
     flow->stats.rx_bytes += bytes;
 
@@ -1915,7 +1920,8 @@ static int of_dpa_cmd_flow_get_stats(OfDpa *of_dpa, uint64_t cookie,
 {
     OfDpaFlow *flow = of_dpa_flow_find(of_dpa, cookie);
     size_t tlv_size;
-    int64_t now = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) / 1000;
+    int64_t now_ms = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
+    int64_t now = now_ms / 1000;
     RockerTlv *nest;
     int pos;
 
@@ -1924,7 +1930,8 @@ static int of_dpa_cmd_flow_get_stats(OfDpa *of_dpa, uint64_t cookie,
     }
 
     tlv_size = rocker_tlv_total_size(0) +                 /* nest */
-               rocker_tlv_total_size(sizeof(uint32_t)) +  /* duration */
+               rocker_tlv_total_size(sizeof(uint32_t)) +  /* duration (s) */
+               rocker_tlv_total_size(sizeof(uint64_t)) +  /* idle (ms) */
                rocker_tlv_total_size(sizeof(uint64_t)) +  /* rx_pkts */
                rocker_tlv_total_size(sizeof(uint64_t)) +  /* rx_bytes */
                rocker_tlv_total_size(sizeof(uint64_t)) +  /* tx_ptks */
@@ -1938,6 +1945,8 @@ static int of_dpa_cmd_flow_get_stats(OfDpa *of_dpa, uint64_t cookie,
     nest = rocker_tlv_nest_start(buf, &pos, ROCKER_TLV_CMD_INFO);
     rocker_tlv_put_le32(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_DURATION,
                         (int32_t)(now - flow->stats.install_time));
+    rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_IDLE,
+                        now_ms - flow->stats.last_used_time);
     rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_RX_PKTS,
                         flow->stats.rx_pkts);
     rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_RX_BYTES,
