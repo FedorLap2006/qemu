@@ -1911,13 +1911,15 @@ static int of_dpa_cmd_flow_get_stats(OfDpa *of_dpa, uint64_t cookie,
     OfDpaFlow *flow = of_dpa_flow_find(of_dpa, cookie);
     size_t tlv_size;
     int64_t now = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) / 1000;
+    RockerTlv *nest;
     int pos;
 
     if (!flow) {
         return -ROCKER_ENOENT;
     }
 
-    tlv_size = rocker_tlv_total_size(sizeof(uint32_t)) +  /* duration */
+    tlv_size = rocker_tlv_total_size(0) +                 /* nest */
+               rocker_tlv_total_size(sizeof(uint32_t)) +  /* duration */
                rocker_tlv_total_size(sizeof(uint64_t)) +  /* rx_pkts */
                rocker_tlv_total_size(sizeof(uint64_t));   /* tx_ptks */
 
@@ -1926,12 +1928,14 @@ static int of_dpa_cmd_flow_get_stats(OfDpa *of_dpa, uint64_t cookie,
     }
 
     pos = 0;
+    nest = rocker_tlv_nest_start(buf, &pos, ROCKER_TLV_CMD_INFO);
     rocker_tlv_put_le32(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_DURATION,
                         (int32_t)(now - flow->stats.install_time));
     rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_RX_PKTS,
                         flow->stats.rx_pkts);
     rocker_tlv_put_le64(buf, &pos, ROCKER_TLV_OF_DPA_FLOW_STAT_TX_PKTS,
                         flow->stats.tx_pkts);
+    rocker_tlv_nest_end(buf, &pos, nest);
 
     return desc_set_buf(info, tlv_size);
 }
